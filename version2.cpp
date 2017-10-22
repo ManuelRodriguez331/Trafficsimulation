@@ -1,103 +1,9 @@
 /*
-titel: trafficsimulation
-dependencies: SFML
-compile with: clang++ -std=c++14 -lsfml-graphics -lsfml-window -lsfml-system trafficsimulation.cpp
-
-date: Okt 2, 2017
-programming language: C++
-path: /home/user1/neu/texte/arbeitsprobe/programmieren/2017-Aug-26git
-Code formatting: bash -c "astyle --indent-classes -Y -s2 --style=attach --pad-oper"
-to do:
-  - car relativemove
-  - richtungswahl
-
-to do later:
-  - sqlite https://www.tutorialspoint.com/sqlite/sqlite_c_cpp.htm
-  - Beispiel: /home/user1/neu/texte/arbeitsprobe/programmieren/2017-Feb-24-c++robothand
-
-C++ Libraries:
-  - Boost,
-  - OpenCV, Moveit, OMPL, Gazebo
-  - SUMO (Simulation of Urban Mobility)
-  - List of libraries: https://github.com/jslee02/awesome-robotics-libraries
-  - TORCS, speeddreams
-  - SmartBody (Charakter animation plattform)
-  - sqlite ignition-math
-C++11:
-  Referenzen
-  std::vector (Array) http://www.learncpp.com/cpp-tutorial/6-16-an-introduction-to-stdvector/
-  auto Flag = true; // geht nicht in Klassen
-git:
-  git init (neues Projekt erzeugen)
-  git add 1.py (Datei hinzufügen)
-  git commit -am "TEXT" (Commit)
-  git tag v1.1 8930136ffbd83a (Tagging)
-Show:
-  git log --oneline --decorate --graph
-  git status
-  git diff
-  gitk --all
-Branches:
-  neuen Branch: git branch issue12
-  Branch wechseln: git checkout issue12
-  merge: git checkout master
-         git merge issue12 --no-ff -m "BESCHREIBUNG"
-  Branch löschen: git branch -d issue12
-Merge conflict:
-  1. Datei in Texteditor bearbeiten
-  3. merge abschließen: git commit -am "BESCHREIBUNG"
-Lines of Code:
-  wc -l $(git ls-files)
-Anleitung: https://wiki.ubuntuusers.de/Git/
-UML mit doxygen:
-  https://stackoverflow.com/questions/4755913/how-to-use-doxygen-to-create-uml-class-diagrams-from-c-source
-
-Pylint UML:
-  pyreverse -o png *.py -my
-  -k (only classnames)
-  -my (Module names)
-Packages anzeigen:
-  1. pyreverse -o dot *.py -my -k
-  2. add cluster textfile:
-     subgraph clusterAnimal {
-       label = "Package animal"
-       a -> b;
-     }
-  3. straight lines: http://www.graphviz.org/content/attrs#dsplines
-     digraph {
-       splines="polyline";
-       or: splines="line";
-       or: splines="ortho";
-  3. dot -Tpng 1.dot > 2.png
-
-
-history:
-  Oct 9, 2017, 1836 lines of code
-  Oct 8, 2017, 1789 lines of code
-  Oct 7, 2017, 1816 lines of code
-  Oct 6, 2017, 1643 lines of code
-  Oct 4, 2017, 1601 lines of code
-  Oct 3, 2017, 1530 lines of code
-  Oct 2, 2017, 1481 lines of code
-  Sep 29, 2017, 1320 lines of code
-  Sep 28, 2017, 1269 lines of code
-  Sep 27, 2017, 1266 lines of code
-  Sep 25, 2017, 1194 lines of code
-  Sep 24, 2017, 1208 lines of code
-  Sep 23, 2017, 1197 lines of code
-  Sep 22, 2017, 1159 lines of code
-  Sep 20, 2017, 1125 lines of code
-  Sep 19, 2017, 1000 lines of code
-  Sep 18, 2017, 948 lines of code
-  Sep 16, 2017, 884 lines of code
-  Sep 15, 2017, 834 lines of code
-  Sep 13, 2017, 764 lines of code
-  Sep 12, 2017, 697 lines of code
-  Sep 6, 2017, 694 lines of code
-  Sep 3, 2017, 698 lines of code
-  Sep 2, 2017, 638 lines of code
-  Aug 26, 2017, 547 Lines of Code
-  Aug 24, 2017, 448 Lines of Code
+titel: Trafficsimulation in C++
+compile: clang++ -std=c++14 -lsfml-graphics -lsfml-window -lsfml-system -pthread version2.cpp
+Font directory is Linux Fedora
+press "2" for AI-Bot
+date: 22 Okt 2917
 
 */
 
@@ -106,16 +12,25 @@ history:
 #include <string>
 #include <complex>
 #include <math.h>
-
-enum Direction { left,right,up,down };
+#include <fstream> // textfile
+#include <random>
+#include <thread>
 
 class Settings {
+  // sf::Color black(0x000000ff); // 0xRRGGBBAA, color hexadecimal
+  //std::cout << "hallo" << "\n";
+  // std::vector<std::string> event = {""};
+  //event.push_back("event1");
 public:
   sf::RenderWindow window;
   int framestep=0;
+  int fps=60;
   sf::Vector2f mouse = {0,0};
+  bool mousepressed=false;
+  bool holdingobject=false;
   sf::Font font;
   sf::Text text;
+  std::random_device myrandomdevice;     // random: only used once to initialise (seed) engine
   /// Settings constructor
   Settings()
   {
@@ -124,8 +39,13 @@ public:
     text.setCharacterSize(14);
     text.setFillColor(sf::Color::Black);
   }
+  auto random_integer(int min, int max) {
+    std::mt19937 rng(myrandomdevice());    // random-number engine used (Mersenne-Twister in this case)
+    std::uniform_int_distribution<int> uni(min,max); // guaranteed unbiased
+    return uni(rng);
+  }
   /// paint text s on x,y
-  auto painttext(std::string s, int x, int y) {
+  void painttext(std::string s, int x, int y) {
     text.setString(s);
     text.setPosition(x,y);
     window.draw(text);
@@ -150,239 +70,348 @@ public:
     if (angle<0) angle = angle + 360;
     return angle;
   }
-  auto drawline(sf::Vector2f p1, sf::Vector2f p2) {
+  void drawline(sf::Vector2f p1, sf::Vector2f p2) {
     sf::Vertex line[] = {
       sf::Vertex(p1,sf::Color::Black),
       sf::Vertex(p2,sf::Color::Black)
     };
     window.draw(line, 2, sf::Lines);
   }
-  auto drawcircle(sf::Vector2f pos, int radius) {
+  void drawcircle(sf::Vector2f pos, int radius) {
     sf::CircleShape circle(radius);
     circle.setFillColor(sf::Color::Black);
     circle.setPosition(pos);
     window.draw(circle);
+  }
+  /// checks if pcheck is in rectangle
+  auto inrect(sf::Vector2f p1, sf::Vector2f p2, sf::Vector2f pcheck) {
+    auto rangex=false,rangey=false;
+    if (pcheck.x>=p1.x and pcheck.x<=p2.x) rangex=true;
+    if (pcheck.y>=p1.y and pcheck.y<=p2.y) rangey=true;
+    if (rangex==true and rangey==true) return true;
+    else return false;
+  }
+  /// return difference between two angles
+  auto anglediff(int source, int target) {
+    auto temp = target-source;
+    temp = (temp + 180) % 360 - 180;
+    return temp;
   }
 };
 
 /// global variables
 Settings mysettings;
 
-class Roadsegment {
+class Box {
 public:
-  sf::Vector2f p1 {50,300};
-  sf::Vector2f p2 {300,250};
-  sf::Vector2f p1left,p1right;
-  sf::Vector2f p2left,p2right;
-  int size=20;
-  auto set(sf::Vector2f p1_, sf::Vector2f p2_) {
-    p1 = p1_;
-    p2 = p2_;
+  sf::Vector2f position;
+  sf::Vector2f positioncenter;
+  int width=25, height=25;
+  std::string type="lane";
+  int direction;
+  void update() {
+    positioncenter={position.x+width/2,position.y+height/2};
+    if (type=="lane" or type=="obstacle") paintrect();
+    if (type=="car") paintcircle();
   }
-  auto calcpoints() {
-    // getangle
-    auto angle=mysettings.angle_between_two_points(p1,p2);
-    // calcpoints
-    p1left = mysettings.polarpoint(p1,angle-90,size);
-    p1right = mysettings.polarpoint(p1,angle+90,size);
-    p2left = mysettings.polarpoint(p2,angle-90,size);
-    p2right = mysettings.polarpoint(p2,angle+90,size);
+  void paintrect() {
+    sf::RectangleShape box(sf::Vector2f(width, height));
+    if (type=="obstacle")
+      box.setFillColor(sf::Color(250,210,200));
+    if (type=="lane")
+      box.setFillColor(sf::Color(230,230,230));
+    box.setPosition(position);
+    mysettings.window.draw(box);
   }
-  auto update() {
-    calcpoints();
-    //mysettings.drawline(p1,p2); // middle
-    mysettings.drawline(p1left,p2left); // left
-    mysettings.drawline(p1right,p2right); // right
-    mysettings.drawcircle(p1,3);
-    mysettings.drawcircle(p2,3);
+  void paintcircle() {
+    sf::CircleShape box(width/2);
+    box.setFillColor(sf::Color::Yellow);
+    box.setPosition(position);
+    mysettings.window.draw(box);
+    // direction
+    sf::Vector2f p2=mysettings.polarpoint(positioncenter,direction,width);
+    mysettings.drawline(positioncenter,p2);
+  }
+  void move(std::string action) {
+    if (action=="left") direction-=90;
+    if (action=="right") direction+=90;
+    if (action=="up") {
+      position=mysettings.polarpoint(position,direction,width);
+    }
   }
 };
 
-
-// array of points: https://www.daniweb.com/programming/software-development/threads/407469/c-array-of-points
-// http://www.cplusplus.com/forum/beginner/13430/
-class Roadnetwork {
+class Physics {
 public:
-  int radius = 3;
-  std::vector<sf::Vector2f> waypoint;
-  std::vector<sf::Vector2f> edge;
-  std::vector<int> path;
-  std::vector<Roadsegment> segmentlist;
+  std::vector<Box> mybox;
 
-  Roadnetwork() // constructor
-  {
-    waypoint.push_back({350, 50});
-    waypoint.push_back({500, 50});
-    waypoint.push_back({500, 220});
-    waypoint.push_back({300, 220});
-    waypoint.push_back({320, 50});
-    
-    edge.push_back({0, 1});
-    edge.push_back({1, 2});
-    edge.push_back({1, 3});
-    edge.push_back({2, 3});
+  Physics() {
+    mybox.push_back({});
+    mybox[mybox.size()-1].position={200,150};
+    mybox[mybox.size()-1].type="car";
+    mybox.push_back({});
+    mybox[mybox.size()-1].position={300,50};
+    mybox[mybox.size()-1].width=50;
+    mybox[mybox.size()-1].height=250;
+    mybox.push_back({});
+    mybox[mybox.size()-1].position={150,150};
+    mybox[mybox.size()-1].width=375;
+    mybox[mybox.size()-1].height=50;
+    mybox.push_back({});
+    mybox[mybox.size()-1].position={150,25};
+    mybox[mybox.size()-1].width=375;
+    mybox[mybox.size()-1].height=50;
+    mybox.push_back({});
+    mybox[mybox.size()-1].position={150,250};
+    mybox[mybox.size()-1].width=375;
+    mybox[mybox.size()-1].height=50;
+    mybox.push_back({});
+    mybox[mybox.size()-1].position={100,25};
+    mybox[mybox.size()-1].width=50;
+    mybox[mybox.size()-1].height=275;
+    mybox.push_back({});
+    mybox[mybox.size()-1].position={525,25};
+    mybox[mybox.size()-1].width=50;
+    mybox[mybox.size()-1].height=275;
+    mybox.push_back({});
+    mybox[mybox.size()-1].position={200,250};
+    mybox[mybox.size()-1].type="obstacle";
+    mybox.push_back({});
+    mybox[mybox.size()-1].position={250,100};
+    mybox[mybox.size()-1].type="obstacle";
 
-    path.push_back(0);
-    path.push_back(1);
-    path.push_back(3);
-    path.push_back(0);
-    generatesegment();
-  }
-  void generatesegment() { 
-    for (auto i=0; i<edge.size(); i++) {
-      segmentlist.push_back({});
-      segmentlist[i].set(waypoint[edge[i].x],waypoint[edge[i].y]);
-    }
-  }
-  void paintwaypoint(int i) {
-    sf::CircleShape circle(radius);
-    circle.setFillColor(sf::Color::Black);
-    circle.setPosition(waypoint[i].x, waypoint[i].y);
-    mysettings.window.draw(circle);
-    mysettings.painttext(std::to_string(i),waypoint[i].x+4,waypoint[i].y+4);
   }
   void update() {
-    for (int i=0; i<waypoint.size(); i++) {
-      paintwaypoint(i);
-    }
-    for (auto i=0; i<segmentlist.size(); i++) {
-      segmentlist[i].update();
-    }
-  }
-};
-
-class Car {
-public:
-  int x=0,y=0;
-  int waypointstart=0, waypointend=1; // between two waypoints
-  int distancerelative=10; /// distance from waypointstart
-  void paint() {
-    // body
-    sf::CircleShape circle(20.f);
-    circle.setFillColor(sf::Color::Yellow);
-    circle.setPosition(x, y);
-    mysettings.window.draw(circle);
-    // eye
-    sf::CircleShape eye(5.f);
-    sf::CircleShape eyeinside(3.f);
-    eye.setFillColor(sf::Color::White);
-    eyeinside.setFillColor(sf::Color::Blue);
-    eye.setPosition(x+6, y+10);
-    eyeinside.setPosition(x+8, y+11);
-    mysettings.window.draw(eye);
-    mysettings.window.draw(eyeinside);
-    eye.setPosition(x+26, y+10);
-    eyeinside.setPosition(x+28, y+11);
-    mysettings.window.draw(eye);
-    mysettings.window.draw(eyeinside);
-    
-    // nose
-    sf::CircleShape nose(3.f);
-    nose.setFillColor(sf::Color::Blue);
-    nose.setPosition(x+17, y+20);
-    mysettings.window.draw(nose);
-    
-    // hat
-    sf::RectangleShape hat(sf::Vector2f(20.f, 15.f));
-    hat.setFillColor(sf::Color::Blue);
-    hat.setPosition(x+10, y-10);
-    mysettings.window.draw(hat);
-  }
-  /// change relative position of car to waypoint
-  void move(Direction action) {
-    auto step=10;
-    if (action==up) distancerelative += step;
-    if (action==down) distancerelative -= step;
+    for (auto i=1;i<mybox.size();i++)
+      mybox[i].update();
+    mybox[0].update(); // car at last
   }
 
 };
 
-
-class Physics  {
+class Sensorbase {
 public:
-  Roadnetwork myroadnetwork;
-  Car mycar;
-  std::vector<std::string> event = {""};
-
-  void updateevent() {
-    // car position
-    sf::Vector2f p1=myroadnetwork.waypoint[mycar.waypointstart];
-    sf::Vector2f p2=myroadnetwork.waypoint[mycar.waypointend];
-    auto angle=mysettings.angle_between_two_points(p1,p2);
-    sf::Vector2f p3 = mysettings.polarpoint(p1,angle,mycar.distancerelative);
-    // clear
-    event.clear();
-    // event traffic Junction
-    auto dist1=mycar.distancerelative;
-    auto dist2=mysettings.calcdistance(p1,p2);
-    auto scale=0.1f; /// percent of waylength for enter traffic junction
-    if ((dist1>(1-scale)*dist2) or dist1<scale*dist2) {
-      event.push_back("trafficjunction");
-    }
-    else {
-      event.push_back("road");
-    }
-    
+  Physics myphysics;
+  void set(Physics myphysics_) {
+    myphysics=myphysics_;
   }
-  void run() {
-    myroadnetwork.update();
-    updateevent();
-    mycar.paint();
-    carrelativemove();
-  }
-  /// to do: ausglieder von p1,p2 calculation
-  void carrelativemove() {
-    // get startposition
-    sf::Vector2f p1=myroadnetwork.waypoint[mycar.waypointstart];
-    // distance from start
-    sf::Vector2f p2=myroadnetwork.waypoint[mycar.waypointend];
-    auto angle=mysettings.angle_between_two_points(p1,p2);
-    sf::Vector2f p3 = mysettings.polarpoint(p1,angle,mycar.distancerelative);
-    // check for end
-    if (mycar.distancerelative>mysettings.calcdistance(p1,p2)) {
+};
 
-      if (mycar.waypointstart<myroadnetwork.waypoint.size()) {
-        mycar.waypointstart++;
-        mycar.distancerelative=0;
-        mycar.waypointend++;
-        mycar.move(Direction(up)); // one tick forward
+class Knowledgebase : public Sensorbase {
+public:
+  int getobject(sf::Vector2f, std::string);
+  int scanlane(sf::Vector2f, int);
+  int scanobstacle(sf::Vector2f, int);
+  int lanedirection(sf::Vector2f);
+  int drivedirection(sf::Vector2f);
+  int nextstepajunction();
+  std::vector<std::string> behavior();
+  
+};
+/// identify object
+/// return: 1=object found, 0=not found
+int Knowledgebase::getobject(sf::Vector2f position, std::string name) {
+  int result=0;
+  for (auto i=0;i<myphysics.mybox.size();i++) {
+    sf::Vector2f p1 = myphysics.mybox[i].position;
+    sf::Vector2f p2 = {p1.x+myphysics.mybox[i].width,p1.y+myphysics.mybox[i].height};
+    bool recognize = mysettings.inrect(p1,p2,position);
+    if (recognize==true and name==myphysics.mybox[i].type)
+      result=1;
+  }
+  return result;
+}
+/// search for end of lane
+/// return number of steps
+int Knowledgebase::scanlane(sf::Vector2f position, int direction) {
+  auto width = myphysics.mybox[0].width;
+  int count;
+  for (count=1; count<30; count++) {
+    sf::Vector2f p1=mysettings.polarpoint(position,direction,count*width);
+    if (getobject(p1,"lane")!=1)
+      break;
+  }
+  return count;
+}
+/// search for obstacle
+/// return number of steps
+int Knowledgebase::scanobstacle(sf::Vector2f position, int direction) {
+  auto width = myphysics.mybox[0].width;
+  int max=30;
+  int count;
+  for (count=1; count<max; count++) {
+    sf::Vector2f p1=mysettings.polarpoint(position,direction,count*width);
+    if (getobject(p1,"obstacle")==1 or getobject(p1,"car")==1)
+      break;
+  }
+  if (count==max) count=0;
+  return count;
+}
+/// get lane direction
+/// return: 0=unknown,1=horizontal,2=vertical
+int Knowledgebase::lanedirection(sf::Vector2f position) {
+  int result=0;
+  if (scanlane(position,0)+scanlane(position,180)-1==2) // horizontal?
+    result=1;
+  if (scanlane(position,90)+scanlane(position,270)-1==2) // vertical?
+    result=2;
+  return result;
+}
+/// direction in which a car drives on the lane
+/// return: -1=unknown, 0..360=direction in degree
+int Knowledgebase::drivedirection(sf::Vector2f position) {
+  int result=-1;
+  if (lanedirection(position)==1 // horizontal lane
+    and scanlane(position,0)==1 ) // steps to north
+    result=270;
+  if (lanedirection(position)==1 // horizontal lane
+    and scanlane(position,180)==1 ) // steps to south
+    result=90;
+  if (lanedirection(position)==2 // vertical lane
+    and scanlane(position,90)==1 ) // steps to east
+    result=0;
+  if (lanedirection(position)==2 // vertical lane
+    and scanlane(position,270)==1 ) // steps to west
+    result=180;
+  return result;
+}
+/// tests if next step a junction
+/// 0=nojunction, 1=junction
+int Knowledgebase::nextstepajunction() {
+  // get pos
+  sf::Vector2f robotpos ={myphysics.mybox[0].position.x+myphysics.mybox[0].width/2,myphysics.mybox[0].position.y+myphysics.mybox[0].width/2};  
+  int robotdirection=myphysics.mybox[0].direction;
+  int width =myphysics.mybox[0].width;
+  sf::Vector2f p1 = mysettings.polarpoint(robotpos,robotdirection,width);
+  // lane test
+  int openlanes=0;
+  if (scanlane(p1,robotdirection)>2) // forward
+    openlanes++;
+  if (scanlane(p1,robotdirection+90)>2) // right
+    openlanes++;
+  if (scanlane(p1,robotdirection-90)>2) // left
+    openlanes++;
+  // decision
+  if (openlanes>1) return 1;
+  else return 0;
+}
+/// generate an action sequence
+std::vector<std::string> Knowledgebase::behavior() {
+  std::vector<std::string> result;
+  // wait for junction
+  if (nextstepajunction()==1)
+    result.push_back("wait");
+  // action planning
+  std::vector<std::string> action1,action2,action3,action4;
+  action1 = {"up"}; // normal forward
+  action2 = {"up","up"}; // junction straight ahead
+  action3 = {"right","up"}; // junction right
+  action4 = {"up","left","up","up"}; // junction left
+  std::vector<int> selectaction;
+  sf::Vector2f robotpos ={myphysics.mybox[0].position.x+myphysics.mybox[0].width/2,myphysics.mybox[0].position.y+myphysics.mybox[0].width/2};  
+  int robotdirection=myphysics.mybox[0].direction;
+  int lane=lanedirection(robotpos);
+  if (lane==1 or lane==2) selectaction.push_back(1);
+  else {
+    if (scanlane(robotpos,robotdirection)>2)
+      selectaction.push_back(2);
+    if (scanlane(robotpos,robotdirection+90)>2) // right
+      selectaction.push_back(3);
+    if (scanlane(robotpos,robotdirection-90)>2) // left
+      selectaction.push_back(4);
+  }
+  // random element
+  int r = mysettings.random_integer(0,selectaction.size()-1);
+  if (selectaction[r]==1) 
+    result.push_back("up"); // normal forward
+  if (selectaction[r]==2) { // junction straight ahead
+    result.push_back("up");
+    result.push_back("up");
+  }
+  if (selectaction[r]==3) { // junction right
+    result.push_back("right");
+    result.push_back("up");
+  }
+  if (selectaction[r]==4) { // junction left
+    result.push_back("up");
+    result.push_back("left");
+    result.push_back("up");
+    result.push_back("up");
+  }
+  return result;
+}
+
+
+class Sensor : public Knowledgebase {
+public:
+  void paintrectangle(sf::Vector2f position) {
+    auto width = myphysics.mybox[0].width;
+    sf::RectangleShape box(sf::Vector2f(width, width));
+    box.setFillColor(sf::Color::Transparent);
+    box.setOutlineThickness(1);
+    box.setOutlineColor(sf::Color::Blue);
+    box.setPosition({position.x-width/2,position.y-width/2});
+    mysettings.window.draw(box);
+  }
+  void paintmarker(sf::Vector2f position) {
+    auto width = myphysics.mybox[0].width;
+    std::vector<int> direction = {0,90,180,270};
+    sf::Vector2f p1;
+    for (int i=0;i<direction.size();i++) {
+      // lane
+      int count=scanlane(position,direction[i]);
+      if (count!=0) {
+        p1=mysettings.polarpoint(position,direction[i],count*width);
+        mysettings.drawcircle(p1,4);
+      }
+      // obstacle
+      count=scanobstacle(position,direction[i]);
+      if (count!=0) {
+        p1=mysettings.polarpoint(position,direction[i],count*width);
+        mysettings.drawcircle(p1,2);
       }
     }
-    // check for start
-    if (mycar.distancerelative<0 and mycar.waypointstart>0) {
-      mycar.waypointstart--;
-      mycar.waypointend--;
-      sf::Vector2f p1=myroadnetwork.waypoint[mycar.waypointstart];
-      sf::Vector2f p2=myroadnetwork.waypoint[mycar.waypointend];
-      mycar.distancerelative = mysettings.calcdistance(p1,p2);
-      mycar.move(Direction(down)); // one tick backward
-    }
-    // set car position
-    mycar.x=p3.x;
-    mycar.y=p3.y;
   }
+  void paintsensor(sf::Vector2f position) {
+    paintrectangle(position);
+    paintmarker(position);
+  }
+
 };
 
 
-
-/// example: https://github.com/eXpl0it3r/Examples/blob/master/SFML/SimpleAABB.cpp
 class GUI {
 public:
   Physics myphysics;
-  float fpsexact;
-
-  auto updateGUI() {
-    // text
-    mysettings.painttext("frame "+std::to_string(mysettings.framestep),10,10);
-    mysettings.painttext("mouse "+std::to_string(mysettings.mouse.x)+" "+std::to_string(mysettings.mouse.y),10,30);
-    mysettings.painttext("fps "+std::to_string(fpsexact),10,50);
-    mysettings.painttext("event1 "+myphysics.event[0],10,70);
-    auto temp = std::to_string(myphysics.mycar.waypointstart)+" "+std::to_string(myphysics.mycar.waypointend);
-    mysettings.painttext("waypoint "+temp,10,90);
-    
-    // update
-    mysettings.window.display();
-    mysettings.framestep++;
+  Sensor mysensor;
+  void run() {
+    mysettings.window.create(sf::VideoMode(600, 338), "SFML");
+    while(mysettings.window.isOpen())
+    {
+      // wait
+      sf::sleep(sf::milliseconds(1000/mysettings.fps));
+      // update
+      mysettings.window.clear(sf::Color(200,200,200));
+      myphysics.update();
+      mysensor.set(myphysics);
+      sf::Vector2f pos=mysettings.mouse;
+      mysensor.paintsensor(pos);
+      mysettings.painttext("frame "+std::to_string(mysettings.framestep),10,10);
+      mysettings.painttext("mouse "+std::to_string(mysettings.mouse.x)+" "+std::to_string(mysettings.mouse.y),10,30);
+      mysettings.painttext("fps "+std::to_string(mysettings.fps),10,50);
+      mysettings.painttext("kb car "+std::to_string(mysensor.getobject(pos,"car")),10,70);
+      mysettings.painttext("kb lane "+std::to_string(mysensor.getobject(pos,"lane")),10,90);
+      mysettings.painttext("kb obstacle "+std::to_string(mysensor.getobject(pos,"obstacle")),10,110);
+      mysettings.painttext("kb scan lane east "+std::to_string(mysensor.scanlane(pos,90)),10,130);
+      mysettings.painttext("kb scan obstacle south "+std::to_string(mysensor.scanobstacle(pos,180)),10,150);
+      mysettings.painttext("kb lanedirection "+std::to_string(mysensor.lanedirection(pos)),10,170);
+      mysettings.painttext("kb drivedirection "+std::to_string(mysensor.drivedirection(pos)),10,190);
+      mysettings.painttext("robot direction "+std::to_string(myphysics.mybox[0].direction),10,210);
+      
+      inputhandling();
+      mysettings.window.display();
+      mysettings.framestep++;
+    }
   }
   void inputhandling() {
     sf::Event event;
@@ -392,55 +421,52 @@ public:
       if (event.type == sf::Event::MouseMoved) {
         mysettings.mouse.x = sf::Mouse::getPosition(mysettings.window).x;
         mysettings.mouse.y = sf::Mouse::getPosition(mysettings.window).y;
-        
       }
-      if (event.key.code == sf::Keyboard::Left) 
-        myphysics.mycar.move(Direction(left));
-      if (event.key.code == sf::Keyboard::Right) 
-        myphysics.mycar.move(Direction(right));
-      if (event.key.code == sf::Keyboard::Up) 
-        myphysics.mycar.move(Direction(up));
-      if (event.key.code == sf::Keyboard::Down) 
-        myphysics.mycar.move(Direction(down));
+      if (event.type == sf::Event::MouseButtonPressed) {
+         mysettings.mousepressed=true;
+      }
+
+      if (event.key.code == sf::Keyboard::Num1 and event.type == sf::Event::KeyPressed)
+        std::cout<<mysensor.nextstepajunction()<<"\n";
+      if (event.key.code == sf::Keyboard::Num2 and event.type == sf::Event::KeyPressed)
+        taskmain();
+      if (event.key.code == sf::Keyboard::Left and event.type == sf::Event::KeyPressed)
+        myphysics.mybox[0].move("left");
+      if (event.key.code == sf::Keyboard::Right and event.type == sf::Event::KeyPressed)
+        myphysics.mybox[0].move("right");
+      if (event.key.code == sf::Keyboard::Up and event.type == sf::Event::KeyPressed)
+        myphysics.mybox[0].move("up");
     }
   }
-  void run() {
-    mysettings.window.create(sf::VideoMode(600, 338), "SFML");
-    sf::Clock clock;
-    auto lastTime = 0;
-
-    while(mysettings.window.isOpen())
-    {
-      mysettings.window.clear(sf::Color(200,200,200));
-      myphysics.run();
-      inputhandling();
-      updateGUI();
-      // wait
-      auto fps=30;
-      sf::sleep(sf::milliseconds(1000/fps));
-      // measure frames per seconds (over a long timespan)
-      if (mysettings.framestep%fps==0) {
-        auto currentTime = clock.restart().asSeconds();
-        fpsexact = 1.0f*fps/currentTime;
+  void task3() {
+    auto pause=50;
+    for (auto trial=0;trial<10000;trial++) {
+      std::vector<std::string> actions=mysensor.behavior();
+      for (auto i=0;i<actions.size();i++) {
+        //std::cout << actions[i] << " ";
+        if (actions[i]=="wait")
+          sf::sleep(sf::milliseconds(1000/(0.1*pause)));
+        else myphysics.mybox[0].move(actions[i]);
+        sf::sleep(sf::milliseconds(1000/pause));
       }
-
-     }
+    }
+    //std::cout << "\n";
   }
+  void taskmain() {
+    std::thread t1;
+    t1=std::thread(&GUI::task3, this);
+    t1.detach();
+  }
+
 };
 
 
-class Game {
-public:
-  GUI mygui;
-  void run() {
-    mygui.run();
-  }
-};
 
 int main()
 {
-  //std::cout << angle << "\n";
-  Game mygame;
-  mygame.run();
+  GUI mygui;
+  mygui.run();
   return 0;
 }
+
+
